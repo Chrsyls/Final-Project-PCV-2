@@ -6,6 +6,8 @@ import time
 
 # ================= CONFIG =================
 WINDOW_NAME = "Kamen Rider – HENSHIN MODE"
+WINDOW_TRACK = "Body Tracking"
+
 BLINK_RATIO_THRESHOLD = 5.0
 MOUTH_OPEN_THRESHOLD = 0.5
 
@@ -14,11 +16,13 @@ COLOR_DARK = (0, 90, 0)
 COLOR_SILVER = (200, 200, 200)
 COLOR_EYE = (0, 0, 255)
 COLOR_BLACK = (30, 30, 30)
+COLOR_TRACK = (0, 255, 255)
 
-# ================= MEDIAPIPE (FIXED INIT) =================
+# ================= MEDIAPIPE =================
 mp_pose = mp.solutions.pose
 mp_face = mp.solutions.face_mesh
 mp_hands = mp.solutions.hands
+mp_draw = mp.solutions.drawing_utils
 
 pose = mp_pose.Pose(
     static_image_mode=False,
@@ -110,7 +114,9 @@ while cap.isOpened():
     frame = cv2.flip(frame, 1)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     h, w, _ = frame.shape
+
     out = np.zeros_like(frame)
+    tracking_view = frame.copy()
 
     pose_r = pose.process(rgb)
     face_r = face.process(rgb)
@@ -124,11 +130,20 @@ while cap.isOpened():
         lm = face_r.multi_face_landmarks[0].landmark
         pts = [(int(p.x*w), int(p.y*h)) for p in lm]
         blinking = (blink_ratio([33,159,133,145], pts) +
-                    blink_ratio([362,386,263,374], pts))/2 > BLINK_RATIO_THRESHOLD
+                    blink_ratio([362,386,263,374], pts)) / 2 > BLINK_RATIO_THRESHOLD
         mouth_open = mouth_ratio([61,13,291,14], pts) > MOUTH_OPEN_THRESHOLD
 
     # ===== BODY =====
     if pose_r.pose_landmarks:
+        # DRAW BODY TRACKING WINDOW
+        mp_draw.draw_landmarks(
+            tracking_view,
+            pose_r.pose_landmarks,
+            mp_pose.POSE_CONNECTIONS,
+            mp_draw.DrawingSpec(color=COLOR_TRACK, thickness=2, circle_radius=4),
+            mp_draw.DrawingSpec(color=(255,255,255), thickness=2)
+        )
+
         lm = pose_r.pose_landmarks.landmark
         def P(i, n): return smooth(n, lm[i].x*w, lm[i].y*h)
 
@@ -182,7 +197,7 @@ while cap.isOpened():
             COLOR_SILVER, -1
         )
 
-    # ===== HANDS (ANTI-DISAPPEAR) =====
+    # ===== HANDS =====
     if hands_r.multi_hand_landmarks:
         for hi, hand in enumerate(hands_r.multi_hand_landmarks):
             pts = [smooth(f"h{hi}_{i}", lm.x*w, lm.y*h)
@@ -198,7 +213,10 @@ while cap.isOpened():
                 cv2.line(out, pts[chain[i]], pts[chain[i+1]],
                          COLOR_SILVER, int(7*scale))
 
+    # ================= DISPLAY =================
     cv2.imshow(WINDOW_NAME, out)
+    cv2.imshow(WINDOW_TRACK, tracking_view)
+
     if cv2.waitKey(1) & 0xFF == 27:
         break
 
